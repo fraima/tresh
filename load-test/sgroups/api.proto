@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package hbf.v1.sgroups;
+option go_package = "github.com/H-BF/protos/pkg/api/sgroups;sgroups";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+import "common/ip-transport.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  info: {
+    title: "Host Based Firewall";
+    version: "1.0";
+    contact: {
+      name: "E";
+      url: "https://blog.bullgare.com/2020/07/complete-list-of-swagger-options-to-protobuf-file/";
+    };
+  };
+  schemes: [HTTP];
+  consumes: "application/json";
+  produces: "application/json";
+};
+
+//Network: represents a named IP network
+message Network {            
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {      
+      required: ["name"]
+    }    
+  };  
+  //the name of network
+  string name = 1;
+  //network in CIDR form
+  common.Networks.NetIP network = 2;
+}
+
+//SecGroup: represents a security group
+message SecGroup {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {      
+      required: ["name"]
+    }    
+  };
+  //name of security group
+  string name = 1;
+  //related to security gpoup network(s)
+  repeated Network networks = 2;
+}
+
+//Rule: represents Security Wroups Rule
+message Rule {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {      
+      required: ["sg_from", "sg_to", "transport"]
+    }    
+  };
+  //security group at client
+  SecGroup sg_from = 1;
+  //security group at server
+  SecGroup sg_to = 2;
+  //IP net transport
+  common.Networks.NetIP.Transport transport = 3;
+  //port range(s) from
+  repeated common.Networks.NetIP.PortRange ports_from = 4;
+  //port range(s) to
+  repeated common.Networks.NetIP.PortRange ports_to = 5;
+}
+
+//SyncStatusResp: db status after last succeeded Sync
+message SyncStatusResp {
+  //last succeeded updated DB timestamp
+  google.protobuf.Timestamp updated_at = 1;
+}
+
+//SyncSGRules: subject of Security Group Rules to Sync
+message SyncSGRules{
+  //security group rules items
+  repeated Rule rules = 1;
+}
+
+//SyncSecurityGroups: subject of Security Groups to Sync
+message SyncSecurityGroups{
+  //security group items
+  repeated SecGroup groups = 1;
+}
+
+//SyncNetworks: subject of Networks to Sync 
+message SyncNetworks{
+  //network items
+  repeated Network networks = 1;
+}
+
+//ListNetworksReq: req to list Networks
+message ListNetworksReq {
+  //network names scope; if none then list all netrworks
+  repeated string netework_names = 1;
+}
+
+//ListNetworksResp: Network list resp
+message ListNetworksResp {
+  //network items
+  repeated Network networks = 1;
+}
+
+//ListSecurityGroupsReq: req to list Seocurity Groups
+message ListSecurityGroupsReq {
+  //SG names scope; if none then list all SGs
+  repeated string sg_names = 1;
+}
+
+//ListSecurityGroupsResp: Security Groups list resp
+message ListSecurityGroupsResp{
+  //security group items
+  repeated SecGroup groups = 1;
+}
+
+//SyncReq: request to apply changes in DB for one of subject [Networks|Sucurity Groups|Security Grpups Rules]
+message SyncReq {
+  //SyncOp: sync operation
+  enum SyncOp {
+    //FullSync: Delete+Insert+Update operations (default)
+    FullSync = 0;
+    //Upsert: Insert+Update operations
+    Upsert = 1;
+    //Delete: Delete operation
+    Delete = 2;
+  }
+  //sync operation to apply to
+  SyncOp sync_op = 1;
+  //one of subject
+  oneof subject {
+      //subject of Security Grpup(s) Rule(s)
+      SyncSGRules sg_rules = 2;
+      //subject of Security Grpup(s)
+      SyncSecurityGroups groups = 3;
+      //subject of Network(s)
+      SyncNetworks networks = 4;
+  }
+}
+
+//GetSgSubnetsReq: req to get Networks related to Security Group
+message GetSgSubnetsReq {
+  //security group name
+  string sg_name = 1;
+}
+
+//GetSgSubnetsResp: Networks related to Security Group resp
+message GetSgSubnetsResp {
+  //network items
+  repeated Network networks = 1;
+}
+
+//GetRulesReq; req to get Rules scoped by SecGroup pair 'from' --> 'to'
+message GetRulesReq {
+  //name of security groups 'from'
+  string sg_from = 1;
+  //name of security groups 'to'
+  string sg_to = 2;
+}
+
+//FindRulesReq: req to find all SecGroup(s) Rule(s) scoped by variety('from') --> variety('to') SG(s)
+message FindRulesReq {
+  //scope GS name 'from' items
+  repeated string sg_from = 1;
+  //scope  GS name 'to' items
+  repeated string sg_to = 2;
+}
+
+//RulesResp: Security Group(s) Rule(s) resp
+message RulesResp {
+  //SG rule(s) items
+  repeated Rule rules = 1;
+}
+
+//GetSecGroupForAddressReq: req to get Security Group by IP or CIDR
+message GetSecGroupForAddressReq{
+  //an IP or CIDR
+  string address = 1;
+}
+
+service SecGroupService {   
+   option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_tag) = { 
+      description: "Security Groups API service"     
+   };
+   
+   rpc Sync(SyncReq) returns (google.protobuf.Empty) {
+     option (google.api.http) = {
+        post: "/v1/sync"
+        body: "*"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "Sync: makes changes in DB";       
+     };
+   }
+
+   rpc SyncStatus(google.protobuf.Empty) returns(SyncStatusResp){
+     option (google.api.http) = {
+        get: "/v1/sync/status"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "SyncStatus: gets last succeeded update DB status";       
+     };
+   }
+   
+   rpc ListNetworks(ListNetworksReq) returns (ListNetworksResp) {
+     option (google.api.http) = {
+        post: "/v1/list/networks"
+        body: "*"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "ListNetworks: shows list of Network";       
+     };
+   }
+   
+   rpc ListSecurityGroups(ListSecurityGroupsReq) returns (ListSecurityGroupsResp) {
+     option (google.api.http) = {
+        post: "/v1/list/security-groups"
+        body: "*"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "ListSecurityGroups: shows list of Security Groups";       
+     };
+   }
+   
+   rpc GetSgSubnets(GetSgSubnetsReq) returns (GetSgSubnetsResp){
+     option (google.api.http) = {
+        get: "/v1/sg/{sg_name}/subnets"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "GetSgSubnets: gets Networks related to SG";       
+     };
+   };
+   
+   rpc GetRules(GetRulesReq) returns (RulesResp) {
+     option (google.api.http) = {
+        get: "/v1/sg-from/{sg_from}/to/{sg_to}/rules"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "GetRules: gets SG(s) Rule(s) for pair SG 'from'->'to'";       
+     };
+   };
+   
+   rpc FindRules(FindRulesReq) returns (RulesResp) {
+     option (google.api.http) = {
+        post: "/v1/rules"
+        body: "*"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "FindRules: finds SG(s) Rule(s) scoped by variety pairs 'from'->'to'";       
+     };
+   };
+   
+   rpc GetSecGroupForAddress(GetSecGroupForAddressReq) returns (SecGroup) {
+     option (google.api.http) = {
+       get: "/v1/{address}/sg"
+     };
+     option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+        description: "GetSecGroupForAddress: gets Security Group by IP or CIDR";       
+     };
+   };
+}
